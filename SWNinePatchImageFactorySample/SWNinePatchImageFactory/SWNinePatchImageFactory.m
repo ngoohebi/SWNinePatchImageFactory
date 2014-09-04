@@ -6,6 +6,7 @@
 //  Copyright (c) 2014 TaccoTap. All rights reserved.
 
 #import "SWNinePatchImageFactory.h"
+#import <math.h>
 
 @interface SWNinePatchImageFactory (Private)
 + (NSArray*)getRGBAsFromImage:(UIImage*)image atX:(int)xx andY:(int)yy count:(int)count;
@@ -17,7 +18,7 @@
 + (NSArray*)getRGBAsFromImage:(UIImage*)image atX:(int)xx andY:(int)yy count:(int)count
 {
     NSMutableArray* result = [NSMutableArray arrayWithCapacity:count];
-
+    
     // First get the image into your data buffer
     CGImageRef imageRef = [image CGImage];
     NSUInteger width = CGImageGetWidth(imageRef);
@@ -31,10 +32,10 @@
                                                  bitsPerComponent, bytesPerRow, colorSpace,
                                                  kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
     CGColorSpaceRelease(colorSpace);
-
+    
     CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
     CGContextRelease(context);
-
+    
     // Now your rawData contains the image data in the RGBA8888 pixel format.
     int byteIndex = (bytesPerRow * yy) + xx * bytesPerPixel;
     for (int ii = 0; ii < count; ++ii) {
@@ -43,25 +44,25 @@
         CGFloat blue = (rawData[byteIndex + 2] * 1.0) / 255.0;
         CGFloat alpha = (rawData[byteIndex + 3] * 1.0) / 255.0;
         byteIndex += 4;
-
+        
         NSArray* aColor = [NSArray arrayWithObjects:[NSNumber numberWithFloat:red], [NSNumber numberWithFloat:green], [NSNumber numberWithFloat:blue], [NSNumber numberWithFloat:alpha], nil];
         [result addObject:aColor];
     }
-
+    
     free(rawData);
-
+    
     return result;
 }
 
 + (UIImage*)createResizableNinePatchImageNamed:(NSString*)name
 {
     NSAssert([name hasSuffix:@".9"], @"The image name is not ended with .9");
-
+    
     NSString* fixedImageFilename = [NSString stringWithFormat:@"%@%@", name, @".png"];
     UIImage* oriImage = [UIImage imageNamed:fixedImageFilename];
-
+    
     NSAssert(oriImage != nil, @"The input image is incorrect: ");
-
+    
     NSString* fixed2xImageFilename = [NSString stringWithFormat:@"%@%@", [name substringWithRange:NSMakeRange(0, name.length - 2)], @"@2x.9.png"];
     UIImage* ori2xImage = [UIImage imageNamed:fixed2xImageFilename];
     if (ori2xImage != nil) {
@@ -70,7 +71,7 @@
     } else {
         NSLog(@"NinePatchImageFactory[Info]: Using image: %@", fixedImageFilename);
     }
-
+    
     return [self createResizableImageFromNinePatchImage:oriImage];
 }
 
@@ -81,14 +82,22 @@
 
 + (UIImage*)createResizableImageFromNinePatchImage:(UIImage*)ninePatchImage
 {
-    NSArray* rgbaImage = [self getRGBAsFromImage:ninePatchImage atX:0 andY:0 count:ninePatchImage.size.width * ninePatchImage.size.height];
-    NSArray* topBarRgba = [rgbaImage subarrayWithRange:NSMakeRange(1, ninePatchImage.size.width - 2)];
+    float scl = ninePatchImage.scale;
+    int w = ninePatchImage.size.width * scl;
+    int h = ninePatchImage.size.height * scl;
+    
+    
+    NSArray* rgbaImage = [self getRGBAsFromImage:ninePatchImage atX:0 andY:0 count:w*h];
+    NSArray* topBarRgba = [rgbaImage subarrayWithRange:NSMakeRange(1, w - 2)];
+    
     NSMutableArray* leftBarRgba = [NSMutableArray arrayWithCapacity:0];
     int count = [rgbaImage count];
-    for (int i = 0; i < count; i += ninePatchImage.size.width) {
+    for (int i = 0; i < count; i += w) {
         [leftBarRgba addObject:rgbaImage[i]];
     }
-
+    
+    //int colori = 0;
+    
     int top = -1, left = -1, bottom = -1, right = -1;
     count = [topBarRgba count];
     for (int i = 0; i <= count - 1; i++) {
@@ -140,9 +149,8 @@
             NSAssert(NO, @"The 9-patch PNG format is not support.");
         }
     }
-
+    
     UIImage* cropImage = [ninePatchImage crop:CGRectMake(1, 1, ninePatchImage.size.width - 2, ninePatchImage.size.height - 2)];
-
     return [cropImage resizableImageWithCapInsets:UIEdgeInsetsMake(top, left, bottom, right)];
 }
 
