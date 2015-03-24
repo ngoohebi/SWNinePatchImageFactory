@@ -8,60 +8,91 @@
 #import "SWNinePatchImageFactory.h"
 
 @interface SWNinePatchImageFactory (Private)
-+ (NSArray*)getRGBAsFromImage:(UIImage*)image atX:(int)xx andY:(int)yy count:(int)count;
 + (UIImage*)createResizableImageFromNinePatchImage:(UIImage*)ninePatchImage;
++ (UIEdgeInsets) getNinePatchInsets: (UIImage *) ninePatchImage;
 @end
 
 @implementation SWNinePatchImageFactory
 
-+ (NSArray*)getRGBAsFromImage:(UIImage*)image atX:(int)xx andY:(int)yy count:(int)count
-{
-    NSMutableArray* result = [NSMutableArray arrayWithCapacity:count];
-
-    // First get the image into your data buffer
-    CGImageRef imageRef = [image CGImage];
-    NSUInteger width = CGImageGetWidth(imageRef);
-    NSUInteger height = CGImageGetHeight(imageRef);
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    unsigned char* rawData = (unsigned char*)calloc(height * width * 4, sizeof(unsigned char));
++ (UIEdgeInsets) getNinePatchInsets: (UIImage *) ninePatchImage {
+    UIEdgeInsets insets = UIEdgeInsetsMake(NSNotFound, NSNotFound, NSNotFound, NSNotFound);
+    CFDataRef pixelData = CGDataProviderCopyData(CGImageGetDataProvider(ninePatchImage.CGImage));
+    const UInt8* data = CFDataGetBytePtr(pixelData);
+    const int width = ninePatchImage.size.width * ninePatchImage.scale;
+    const int height = ninePatchImage.size.height * ninePatchImage.scale;
     NSUInteger bytesPerPixel = 4;
-    NSUInteger bytesPerRow = bytesPerPixel * width;
-    NSUInteger bitsPerComponent = 8;
-    CGContextRef context = CGBitmapContextCreate(rawData, width, height,
-                                                 bitsPerComponent, bytesPerRow, colorSpace,
-                                                 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
-    CGColorSpaceRelease(colorSpace);
-
-    CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
-    CGContextRelease(context);
-
-    // Now your rawData contains the image data in the RGBA8888 pixel format.
-    int byteIndex = (bytesPerRow * yy) + xx * bytesPerPixel;
-    for (int ii = 0; ii < count; ++ii) {
-        CGFloat red = (rawData[byteIndex] * 1.0) / 255.0;
-        CGFloat green = (rawData[byteIndex + 1] * 1.0) / 255.0;
-        CGFloat blue = (rawData[byteIndex + 2] * 1.0) / 255.0;
-        CGFloat alpha = (rawData[byteIndex + 3] * 1.0) / 255.0;
-        byteIndex += 4;
-
-        NSArray* aColor = [NSArray arrayWithObjects:[NSNumber numberWithFloat:red], [NSNumber numberWithFloat:green], [NSNumber numberWithFloat:blue], [NSNumber numberWithFloat:alpha], nil];
-        [result addObject:aColor];
+    { // top bottom
+        float top = NSNotFound;
+        float bottom = NSNotFound;
+        for (int i = 0; i < height; i++) {
+            
+            NSUInteger topPixel = ((width * i) + 0) * bytesPerPixel;
+            NSUInteger bottomPixel = ((width * (height - i)) + 0) * bytesPerPixel;
+            UInt8 alphaTop = data[topPixel + 3];
+            UInt8 alphaBottom = data[bottomPixel + 3];
+            
+            if (top == NSNotFound && alphaTop != 0) {
+                top = i;
+            }
+            if (bottom == NSNotFound && alphaBottom != 0) {
+                bottom = height - i;
+            }
+            if (bottom != NSNotFound && top != NSNotFound) {
+                break;
+            }
+        }
+        
+        insets.top = MAX(top, 0);
+        insets.bottom = MAX((height - bottom - 1), 0);
     }
-
-    free(rawData);
-
-    return result;
+    { // left right
+        float left = NSNotFound;
+        float right = NSNotFound;
+        for (int i = 0; i < width; i++) {
+            
+            NSUInteger leftPixel = ((i) + 0) * bytesPerPixel;
+            NSUInteger rightPixel = (((width - i)) + 0) * bytesPerPixel;
+            UInt8 alphaLeft = data[leftPixel + 3];
+            UInt8 alphaRight = data[rightPixel + 3];
+            
+            if (left == NSNotFound && alphaLeft != 0) {
+                left = i;
+            }
+            if (right == NSNotFound && alphaRight != 0) {
+                right = width - i;
+            }
+            if (right != NSNotFound && left != NSNotFound) {
+                break;
+            }
+        }
+        
+        insets.left = MAX(left, 0);
+        insets.right = MAX((width - right - 1), 0);
+    }
+    CFRelease(pixelData);
+    
+    insets.top /= ninePatchImage.scale;
+    insets.bottom /= ninePatchImage.scale;
+    insets.left /= ninePatchImage.scale;
+    insets.right /= ninePatchImage.scale;
+    
+    NSAssert(insets.top != NSNotFound, @"The 9-patch PNG format is not support insets.top not found.");
+    NSAssert(insets.bottom != NSNotFound, @"The 9-patch PNG format is not support insets.bottom not found.");
+    NSAssert(insets.left != NSNotFound, @"The 9-patch PNG format is not support insets.left not found.");
+    NSAssert(insets.right != NSNotFound, @"The 9-patch PNG format is not support insets.right not found.");
+    
+    return insets;
 }
 
 + (UIImage*)createResizableNinePatchImageNamed:(NSString*)name
 {
     NSAssert([name hasSuffix:@".9"], @"The image name is not ended with .9");
-
+    
     NSString* fixedImageFilename = [NSString stringWithFormat:@"%@%@", name, @".png"];
     UIImage* oriImage = [UIImage imageNamed:fixedImageFilename];
-
+    
     NSAssert(oriImage != nil, @"The input image is incorrect: ");
-
+    
     NSString* fixed2xImageFilename = [NSString stringWithFormat:@"%@%@", [name substringWithRange:NSMakeRange(0, name.length - 2)], @"@2x.9.png"];
     UIImage* ori2xImage = [UIImage imageNamed:fixed2xImageFilename];
     if (ori2xImage != nil) {
@@ -70,7 +101,7 @@
     } else {
         NSLog(@"NinePatchImageFactory[Info]: Using image: %@", fixedImageFilename);
     }
-
+    
     return [self createResizableImageFromNinePatchImage:oriImage];
 }
 
@@ -81,69 +112,11 @@
 
 + (UIImage*)createResizableImageFromNinePatchImage:(UIImage*)ninePatchImage
 {
-    NSArray* rgbaImage = [self getRGBAsFromImage:ninePatchImage atX:0 andY:0 count:ninePatchImage.size.width * ninePatchImage.size.height];
-    NSArray* topBarRgba = [rgbaImage subarrayWithRange:NSMakeRange(1, ninePatchImage.size.width - 2)];
-    NSMutableArray* leftBarRgba = [NSMutableArray arrayWithCapacity:0];
-    int count = [rgbaImage count];
-    for (int i = 0; i < count; i += ninePatchImage.size.width) {
-        [leftBarRgba addObject:rgbaImage[i]];
-    }
-
-    int top = -1, left = -1, bottom = -1, right = -1;
-    count = [topBarRgba count];
-    for (int i = 0; i <= count - 1; i++) {
-        NSArray* aColor = topBarRgba[i];
-        //        NSLog(@"topbar left color: %@,%@,%@,%@", aColor[0], aColor[1], aColor[2], aColor[3]);
-        if ([aColor[3] floatValue] == 1) {
-            left = i;
-            break;
-        }
-    }
-    NSAssert(left != -1, @"The 9-patch PNG format is not correct.");
-    for (int i = count - 1; i >= 0; i--) {
-        NSArray* aColor = topBarRgba[i];
-        //        NSLog(@"topbar right color: %@,%@,%@,%@", aColor[0], aColor[1], aColor[2], aColor[3]);
-        if ([aColor[3] floatValue] == 1) {
-            right = i;
-            break;
-        }
-    }
-    NSAssert(right != -1, @"The 9-patch PNG format is not correct.");
-    for (int i = left + 1; i <= right - 1; i++) {
-        NSArray* aColor = topBarRgba[i];
-        if ([aColor[3] floatValue] < 1) {
-            NSAssert(NO, @"The 9-patch PNG format is not support.");
-        }
-    }
-    count = [leftBarRgba count];
-    for (int i = 0; i <= count - 1; i++) {
-        NSArray* aColor = leftBarRgba[i];
-        //        NSLog(@"leftbar top color: %@,%@,%@,%@", aColor[0], aColor[1], aColor[2], aColor[3]);
-        if ([aColor[3] floatValue] == 1) {
-            top = i;
-            break;
-        }
-    }
-    NSAssert(top != -1, @"The 9-patch PNG format is not correct.");
-    for (int i = count - 1; i >= 0; i--) {
-        NSArray* aColor = leftBarRgba[i];
-        //        NSLog(@"leftbar bottom color: %@,%@,%@,%@", aColor[0], aColor[1], aColor[2], aColor[3]);
-        if ([aColor[3] floatValue] == 1) {
-            bottom = i;
-            break;
-        }
-    }
-    NSAssert(bottom != -1, @"The 9-patch PNG format is not correct.");
-    for (int i = top + 1; i <= bottom - 1; i++) {
-        NSArray* aColor = leftBarRgba[i];
-        if ([aColor[3] floatValue] == 0) {
-            NSAssert(NO, @"The 9-patch PNG format is not support.");
-        }
-    }
-
+    UIEdgeInsets insets = [self getNinePatchInsets: ninePatchImage];
+    
     UIImage* cropImage = [ninePatchImage crop:CGRectMake(1, 1, ninePatchImage.size.width - 2, ninePatchImage.size.height - 2)];
-
-    return [cropImage resizableImageWithCapInsets:UIEdgeInsetsMake(top, left, bottom, right)];
+    
+    return [cropImage resizableImageWithCapInsets:insets];
 }
 
 @end
